@@ -4,7 +4,7 @@ import urllib
 import zipfile
 
 download_data = True
-remove_data = True
+remove_data = False
 directory = os.getcwd() + '/data/'
 
 zipfn = 'data.zip'
@@ -21,7 +21,6 @@ if download_data:
 
 import numpy as np
 fname = directory + 'events.txt'
-#dt = np.dtype([('time', float), ('x',int), ('y', int) ,('polarity', int)])
 
 print "Reading Data: {}".format(fname)
 
@@ -42,14 +41,14 @@ y_rows = np.where(np.logical_and(event_data[:,2] >= input_rect[2], event_data[:,
 rows = np.intersect1d(x_rows,y_rows)
 event_data = event_data[rows]
 
-x = event_data[:,1]
-y = event_data[:,2]
-
 #remove on events
 rows = np.where(event_data[:,3] == 0)
 event_data = event_data[rows]
 
 n_neurons = (input_rect[1] - input_rect[0] + 1) * (input_rect[3] - input_rect[2] + 1)
+
+x = event_data[:,1]
+y = event_data[:,2]
 
 print 'n_neurons {} max event x {} y {} min event x {} y {} '.format(n_neurons, max(x), max(y), min(x), min(y))
 spike_times = [[] for i in range(n_neurons)]
@@ -62,16 +61,15 @@ for i in range(event_data.shape[0]):
     neuron_id = int( row_length * neuron_y + neuron_x)
 
     if(neuron_id < 0):
-        print "Too low"
-    elif (neuron_id > n_neurons):
-        print "Too High"
+        print "Neuron Id is too Low"
+    elif (neuron_id >= n_neurons):
+        print "Neuron Id is too High"
     try:
         spike_times[neuron_id].append(time)
     except Exception as e:
         print "n_id {} spike_times len {} n_x {} n_y {} row_length {}"(neuron_id, len(spike_times), neuron_x, neuron_y, row_length)
         raise e
-#import pyNN.spiNNaker as sim
-
+#import pyNN.spiNNaker as p
 import spynnaker7.pyNN as p
 #import spynnaker8.pyNN as p
 import time
@@ -82,23 +80,23 @@ p.setup(timestep=1.0, min_delay=1.0, max_delay=144.0)
 # neurons per population and the length of runtime in ms for the simulation,
 # as well as the expected weight each spike will contain
 
-n_pops = 2
+n_pops = 3
 
 input_runtime = np.max(event_data[:,0]) * 1000
-extra_time = 1000
+extra_time = 5000
 run_time = input_runtime + extra_time
 
-weight_to_spike = 2.0
+weight_to_spike = 0.5
 # neural parameters of the ifcur model used to respond to injected spikes.
 # (cell params for a synfire chain)
-cell_params_lif = {'cm': 0.25,
+cell_params_lif = {'cm': 0.2,
                    'i_offset': 0.0,
                    'tau_m': 20.0,
-                   'tau_refrac': 2.0,
+                   'tau_refrac': 5.0,
                    'tau_syn_E': 5.0,
-                   'tau_syn_I': 5.0,
-                   'v_reset': -70.0,
-                   'v_rest': -65.0,
+                   'tau_syn_I': 10.0,
+                   'v_reset': -60.0,
+                   'v_rest': -60.0,
                    'v_thresh': -50.0
                    }
 
@@ -148,14 +146,14 @@ stdp_model = p.SynapseDynamics(slow=p.STDPMechanism(timing_dependence=timing_rul
 injector = p.Population(n_neurons, p.SpikeSourceArray, {'spike_times': spike_times}, label='spike_injector')
 
 pops = []
+projs = []
 for i in range(n_pops):
     # create populations (if cur exp)
     pops.append(p.Population(n_neurons, p.IF_curr_exp, cell_params_lif, label='pop_{}'.format(i)))
 
-
     # Create a connection from the injector into the populations
     #p.Projection(injector, pops[i], p.OneToOneConnector(weights=weight_to_spike), synapse_type=stdp_model)
-    p.Projection(injector, pops[i], p.OneToOneConnector(weights=weight_to_spike), synapse_dynamics=stdp_model)
+    projs.append(p.Projection(injector, pops[i], p.OneToOneConnector(weights=weight_to_spike), synapse_dynamics=stdp_model))
 
     # record output for this population
     pops[i].record()
@@ -207,6 +205,10 @@ p.run(run_time)
 # Retrieve spikes from the synfire chain population
 spikes = [pops[i].getSpikes() for i in range(n_pops)]
 
+results_dir = os.getcwd() + '/results/'
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
+
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
@@ -216,9 +218,10 @@ number_of_spikes = sum([len(pops[i]) for i in range(n_pops)])
 if number_of_spikes != 0:
     plt.figure(figsize=(20,10))
     f, axarr = plt.subplots(n_pops, sharex=True)
-    axarr[0].set_title('Spikes')
+    
     colourarr = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
     for i in range(n_pops):
+        axarr[i].set_title('Spikes Pop ' + str(i))
         if len(spikes[i]) != 0:
             axarr[i].plot([j[1] for j in spikes[i]],
                     [j[0] for j in spikes[i]],'o', ms=0.1, c=colourarr[i % len(colourarr)])
@@ -226,9 +229,39 @@ if number_of_spikes != 0:
         axarr[i].set_xlabel('Time/ms')
 
     import datetime
-    f.savefig(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '.pdf')
+    f.savefig(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '.pdf')
 else:
     print "No spikes received"
+
+with open(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '.csv', 'w') as f:
+    for i in range(n_pops):
+        f.write('Neuron Id,Time/ms' + '\n')
+        f.write('Population ' + str(i) + '\n')
+        for row in spikes[i]:
+        	line = str(row[1]) + ',' + str(row[0])
+        	f.write(line + '\n')
+weights = []
+#delays = []
+for i in range(n_pops):
+    weights.append(projs[i].getWeights())
+    #delays.append(projs[i].getDelays())
+
+plt.figure(figsize=(20,10))
+f, axarr = plt.subplots(n_pops, sharex=True)
+
+
+for i in range(n_pops):
+    axarr[i].set_title('Weights for Pop ' + str(i))
+    np_weights = np.array(weights[i]).reshape(input_rect[1] - input_rect[0] + 1, input_rect[3] - input_rect[2] + 1)
+    axarr[i].imshow(np_weights, cmap='hot', interpolation='nearest')
+f.savefig(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ' weights' + '.pdf')
+
+with open(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ' weights' + '.csv', 'w') as f:
+    for i in range(n_pops):
+        f.write('Population ' + str(i) + '\n')
+        for row in weights[i]:
+		line = str(row)
+		f.write(line + '\n')
 
 # Clear data structures on spiNNaker to leave the machine in a clean state for
 # future executions
