@@ -3,14 +3,15 @@ import socket
 import spynnaker8 as p
 from pyNN.random import NumpyRNG, RandomDistribution
 from pyNN.utility import Timer
-#from pyNN.utility.plotting import Figure, Panel
-#import matplotlib.pyplot as plt
-
-simulator_name = 'spiNNaker'
-benchmark = 'CUBA'
 
 import os
 import numpy as np
+import random
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import datetime
+mpl.use('Agg')
 
 # === Reading AER Data ===
 directory = os.getcwd() + '/' 
@@ -23,7 +24,7 @@ event_data = np.genfromtxt(fname,delimiter=' ')
 print "Finished Reading Data"
 
 #input_rect (min_x,max_x,min_y,max_y)
-input_rect = (0,10,0,10)
+input_rect = (0,9,0,9)
 
 #get data within input_rect
 x_rows = np.where(np.logical_and(event_data[:,1] >= input_rect[0], event_data[:,1] <= input_rect[1]))
@@ -35,13 +36,15 @@ event_data = event_data[rows]
 rows = np.where(event_data[:,3] == 0)
 event_data = event_data[rows]
 
-n_stdp_proj = (input_rect[1] - input_rect[0] + 1) * (input_rect[3] - input_rect[2] + 1)
-
+x_width = input_rect[1] - input_rect[0] + 1
+y_width = input_rect[3] - input_rect[2] + 1
+n_inj = x_width * y_width
+print 'Number of inj '
 
 print 'Length of event_data in s: {}'.format(max(event_data[:,0]))
-#print 'n_stdp_proj {} max event x {} y {} min event x {} y {}'.format(n_stdp_proj, max(x), max(y), min(x), min(y))
+print 'n_nj {}'.format(n_inj)
 
-spike_times = [[] for i in range(n_stdp_proj)]
+spike_times = [[] for i in range(n_inj)]
 
 for i in range(event_data.shape[0]):
     time = int(event_data[i,0] * 1000)
@@ -52,7 +55,7 @@ for i in range(event_data.shape[0]):
 
     if(neuron_id < 0):
         print "Neuron Id is too Low"
-    elif (neuron_id >= n_stdp_proj):
+    elif (neuron_id >= n_inj):
         print "Neuron Id is too High"
     try:
         spike_times[neuron_id].append(time)
@@ -62,6 +65,8 @@ for i in range(event_data.shape[0]):
 
 
 sconn =0.1 #10% Injector
+#iicon = 0.1 #10% Inter Inhib
+
 t_input_end = int(event_data[event_data.shape[0] - 1][0]) * 1000
 t_extra_time = 10000
 
@@ -159,6 +164,8 @@ cell_params_spike_injector_with_key = {
 
 # === Build the network ===
 
+benchmark = 'blah'
+
 extra = {'threads': threads,
          'filename': "va_%s.xml" % benchmark,
          'label': 'VA'}
@@ -202,8 +209,7 @@ stdp_model = p.STDPMechanism(timing_dependence=timing_rule, weight_dependence=we
 
 
 pops = []
-inj_cells = p.Population(n_stdp_proj, p.SpikeSourceArray, {'spike_times': spike_times}, label='spike_injector')
-
+inj_cells = p.Population(n_inj, p.SpikeSourceArray, {'spike_times': spike_times}, label='spike_injector')
 
 print "%s Initialising membrane potential to random values..." % node_id
 rng = NumpyRNG(seed=rngseed, parallel_safe=parallel_safe)
@@ -221,9 +227,16 @@ print "%s Connecting populations..." % node_id
 exc_conn = p.FixedProbabilityConnector(pconn, rng=rng)
 inh_conn = p.FixedProbabilityConnector(pconn, rng=rng)
 
-inj_conn = p.FixedProbabilityConnector(sconn, rng=rng)
+#inter_inh_con = p.FixedProbabilityConnector(iiconn, rng=rng)
+#inj_conn = p.FixedProbabilityConnector(sconn, rng=rng)
 
-#inj_conn = p.FromListConnector()
+inj_exc_cons = int(sconn * n_exc) 
+inj_exc = []
+for inj_ind in range(n_inj):
+    exc_list = random.sample(range(0, n_exc - 1), inj_exc_cons)
+    for exc_ind in exc_list:
+        inj_exc.append((inj_ind, exc_ind))
+inj_conn = p.FromListConnector(inj_exc)
 
 connections = {
     'e2e': p.Projection(
@@ -242,6 +255,11 @@ connections = {
         inj_cells, exc_cells, inj_conn, receptor_type='excitatory',
         synapse_type=stdp_model)}
 
+'''
+'s2e': p.Projection(
+        inj_cells, exc_cells, inj_conn, receptor_type='excitatory',
+        synapse_type=stdp_model)
+'''
 # Set up the live connection for sending spikes
 live_spikes_connection_send = \
     p.external_devices.SpynnakerLiveSpikesConnection(receive_labels=None, local_port=19999,send_labels=["spike_injector"])
@@ -260,12 +278,6 @@ p.run(tstop)
 
 
 # === Print results to file ===
-import matplotlib as mpl
-mpl.use('Agg')
-import matplotlib.pyplot as plt
-
-import datetime
-
 results_dir = os.getcwd() + '/results/'
 if not os.path.exists(results_dir):
     os.makedirs(results_dir)
@@ -302,20 +314,33 @@ for i in range(len(pops)):
             f.write(line + '\n')
 
 
-shape = input_rect[1] - input_rect[0] + 1, input_rect[3] - input_rect[2] + 1
+shape = (input_rect[1] - input_rect[0], input_rect[3] - input_rect[2])
 
 s2e_weights = connections.get('s2e').getWeights()
 with open(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") +
           ' weights' + '.txt', 'w') as f:
     for w in s2e_weights:
-        f.write(str(w))
+        f.write(str(w) + '/n')
 
-np_weights = np.array(s2e_weights).reshape(shape)
+np_weights = np.array(s2e_weights)
+np_inj_exc = np.array(inj_exc)
+weights_with_input = []
+for i in range(shape[0] * shape[1]):
+    indices = np.where(np_inj_exc[:,0] == i)
+    weights = np_weights[indices]
+    avg = np.average(weights)
+    weights_with_input.append(avg)
+plt.figure()
+np_weights = np.array(weights_with_input).reshape(shape)
 im = plt.imshow(np_weights, cmap='Reds', interpolation='nearest')
-plt.colorbar(im, orientation='horizontal')
+plt.colorbar(im)
 plt.show()
-plt.savefig(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ' weights' + '.pdf')
+plt.savefig(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            + ' weights' + '.png')
 
+
+
+'''
 if node_id == 0:
     print "\n--- Vogels-Abbott Network Simulation ---"
     print "Nodes                  : %d" % np
@@ -324,7 +349,7 @@ if node_id == 0:
     print "Excitatory conductance : %g nS" % Gexc
     print "Inhibitory conductance : %g nS" % Ginh
 
-
+'''
 # === Finished with simulator ===
 
 p.end()
