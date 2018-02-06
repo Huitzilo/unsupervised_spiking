@@ -11,11 +11,11 @@ import random
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import datetime
-mpl.use('Agg')
+#mpl.use('Agg')
 
 # === Reading AER Data ===
 directory = os.getcwd() + '/' 
-fname = directory + 'simulate_events_10x10.txt'
+fname = directory + 'simulate_events_11x11.txt'
 
 print "Reading Data: {}".format(fname)
 
@@ -23,8 +23,9 @@ event_data = np.genfromtxt(fname,delimiter=' ')
 
 print "Finished Reading Data"
 
+
 #input_rect (min_x,max_x,min_y,max_y)
-input_rect = (0,9,0,9)
+input_rect = (0,10,0,10)
 
 #get data within input_rect
 x_rows = np.where(np.logical_and(event_data[:,1] >= input_rect[0], event_data[:,1] <= input_rect[1]))
@@ -39,7 +40,7 @@ event_data = event_data[rows]
 x_width = input_rect[1] - input_rect[0] + 1
 y_width = input_rect[3] - input_rect[2] + 1
 n_inj = x_width * y_width
-print 'Number of inj '
+print 'Number of inj {}'.format(n_inj)
 
 print 'Length of event_data in s: {}'.format(max(event_data[:,0]))
 print 'n_nj {}'.format(n_inj)
@@ -285,11 +286,10 @@ if not os.path.exists(results_dir):
 pop_labels = ['exc', 'inh', 'inj']
 
 for i in range(len(pops)):
-    pop_spikes = pops[i].get_data("spikes")
     plt.figure()
     f, ax = plt.subplots()
 
-    
+    pop_spikes = pops[i].get_data("spikes")
     spiketrains = pop_spikes.segments[0].spiketrains
 
     neurons = np.concatenate(map(lambda x:
@@ -302,7 +302,7 @@ for i in range(len(pops)):
     ax.set_ylabel('Neuron id')
     ax.set_xlabel('Time/ms')
 
-    f.savefig(results_dir +
+    plt.savefig(results_dir +
               datetime.datetime.now().strftime("%Y-%m-%d%H:%M:%S") + ' ' +
               pop_labels[i] + '.png')
 
@@ -314,13 +314,13 @@ for i in range(len(pops)):
             f.write(line + '\n')
 
 
-shape = (input_rect[1] - input_rect[0], input_rect[3] - input_rect[2])
+shape = (input_rect[1] - input_rect[0] + 1, input_rect[3] - input_rect[2] + 1)
 
 s2e_weights = connections.get('s2e').getWeights()
 with open(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") +
           ' weights' + '.txt', 'w') as f:
     for w in s2e_weights:
-        f.write(str(w) + '/n')
+        f.write(str(w) + '\n')
 
 np_weights = np.array(s2e_weights)
 np_inj_exc = np.array(inj_exc)
@@ -330,13 +330,16 @@ for i in range(shape[0] * shape[1]):
     weights = np_weights[indices]
     avg = np.average(weights)
     weights_with_input.append(avg)
-plt.figure()
+
 np_weights = np.array(weights_with_input).reshape(shape)
-im = plt.imshow(np_weights, cmap='Reds', interpolation='nearest')
-plt.colorbar(im)
-plt.show()
-plt.savefig(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            + ' weights' + '.png')
+
+plt.figure()
+plt.imshow(np_weights, cmap='Reds', interpolation='nearest')
+plt.title('')
+plt.ylabel('Y')
+plt.xlabel('X')
+plt.colorbar()
+plt.savefig(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ' weights' + '.png')
 
 
 
