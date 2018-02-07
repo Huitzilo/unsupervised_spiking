@@ -27,11 +27,13 @@ print "Finished Reading Data"
 #input_rect (min_x,max_x,min_y,max_y)
 input_rect = (0,10,0,10)
 
+'''
 #get data within input_rect
 x_rows = np.where(np.logical_and(event_data[:,1] >= input_rect[0], event_data[:,1] <= input_rect[1]))
 y_rows = np.where(np.logical_and(event_data[:,2] >= input_rect[2], event_data[:,2] <= input_rect[3]))
 rows = np.intersect1d(x_rows,y_rows)
 event_data = event_data[rows]
+'''
 
 #remove off events
 rows = np.where(event_data[:,3] == 0)
@@ -51,7 +53,7 @@ for i in range(event_data.shape[0]):
     time = int(event_data[i,0] * 1000)
     neuron_x = event_data[i,1] - input_rect[0]
     neuron_y = event_data[i,2] - input_rect[2]
-    row_length = input_rect[1] - input_rect[0]
+    row_length = input_rect[1] - input_rect[0] + 1
     neuron_id = int( row_length * neuron_y + neuron_x)
 
     if(neuron_id < 0):
