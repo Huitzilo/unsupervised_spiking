@@ -5,7 +5,7 @@ import zipfile
 
 download_data = False
 remove_data = False
-directory = os.getcwd() + '/' 
+directory = os.getcwd() + '/data/'
 
 zipfn = 'data.zip'
 
@@ -32,7 +32,6 @@ if remove_data:
     import shutil
     shutil.rmtree(directory)
     os.remove(zipfn)
-
 #input_rect (min_x,max_x,min_y,max_y)
 input_rect = (0,10,0,10)
 
@@ -51,8 +50,6 @@ n_neurons = (input_rect[1] - input_rect[0] + 1) * (input_rect[3] - input_rect[2]
 x = event_data[:,1]
 y = event_data[:,2]
 
-
-print 'Length of event_data in s: {}'.format(max(event_data[:,0]))
 print 'n_neurons {} max event x {} y {} min event x {} y {} '.format(n_neurons, max(x), max(y), min(x), min(y))
 spike_times = [[] for i in range(n_neurons)]
 
@@ -89,7 +86,7 @@ input_runtime = np.max(event_data[:,0]) * 1000
 extra_time = 5000
 run_time = input_runtime + extra_time
 
-weight_to_spike = 2.0 
+weight_to_spike = 0.5
 # neural parameters of the ifcur model used to respond to injected spikes.
 # (cell params for a synfire chain)
 cell_params_lif = {'cm': 0.2,
@@ -256,10 +253,7 @@ f, axarr = plt.subplots(n_pops, sharex=True)
 for i in range(n_pops):
     axarr[i].set_title('Weights for Pop ' + str(i))
     np_weights = np.array(weights[i]).reshape(input_rect[1] - input_rect[0] + 1, input_rect[3] - input_rect[2] + 1)
-    axarr[i].imshow(np_weights, cmap='Reds', interpolation='nearest')
-    axarr[i].set_ylabel('y')
-    axarr[i].set_xlabel('x')
-    #plt.colorbar(axarr[i], ticks=[np.amin(np_weights), 0, np.amax(np_weights)],)
+    axarr[i].imshow(np_weights, cmap='hot', interpolation='nearest')
 f.savefig(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ' weights' + '.pdf')
 
 with open(results_dir + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ' weights' + '.csv', 'w') as f:
